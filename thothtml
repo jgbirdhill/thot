@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio Reactive Visualiser</title>
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0a0908; }
+    canvas { display: block; }
+    #overlay {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-family: monospace; font-size: 1.5rem;
+      background: rgba(0, 0, 0, 0.85); cursor: pointer; z-index: 10;
+    }
+    #fileInput { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <div>
+      <div>Click to start audio</div>
+      
+    </div>
+  </div>
+ <audio id="audio" preload="auto" loop crossorigin="anonymous"></audio>
+  <canvas id="canvas"></canvas>
+  <script>
+    let audioCtx, analyser, freqData;
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+
+    // Grain texture canvas
+    const grainCanvas = document.createElement('canvas');
+    const grainCtx = grainCanvas.getContext('2d');
+    let grainOffset = 0;
+
+    function generateGrainTexture(w, h) {
+      grainCanvas.width = w;
+      grainCanvas.height = h;
+      const imgData = grainCtx.createImageData(w, h);
+      for (let i = 0; i < imgData.data.length; i += 4) {
+        const v = 220 + Math.random() * 30;
+        const a = Math.random() * 60;
+        imgData.data[i] = v;
+        imgData.data[i+1] = v - 10;
+        imgData.data[i+2] = v - 20;
+        imgData.data[i+3] = a;
+      }
+      grainCtx.putImageData(imgData, 0, 0);
+    }
+
+    function resize(){
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+      generateGrainTexture(width, height);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    let morphAmount = 0;
+let stereoDiff = 0;
+let pulseAmount = 0;
+
+// Static phase offsets for wave desync
+const wavePhaseOffsets = Array.from({ length: 6 }, () => Math.random() * 100);
+
+// Precomputed moon crater data
+const moonCraters = Array.from({ length: 25 }, () => {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 0.4 + Math.random() * 0.5; // minimum spacing from centre
+  const radius = Math.random() * 0.15;
+  return { angle, dist, radius };
+});
+
+    
+    // Shooting star logic
+    let shootingStar = null;
+    let shootingCooldown = 0;
+
+    // Persistent starfield
+    const stars = Array.from({ length: 1500 }, () => {
+  const rand = Math.random();
+  let color = '#FFFFFF';
+  let radius = Math.pow(Math.random(), 2.2) * 1.2 + 0.05;
+  let alpha = Math.pow(Math.random(), 1.8) * 0.5 + 0.2;
+
+  if (rand < 0.6) {
+  color = '#FFFFFF';
+    radius *= 1.2;
+    alpha = 0.8;
+  }  else if (rand < 0.8) {
+    color = 'rgba(200, 220, 255, 0.7)';
+    radius *= 0.6;
+    alpha = 0.6;
+  }
+
+  return {
+    x: Math.random() * width,
+    y: Math.random() * height,
+    prevX: null,
+    prevY: null,
+    x: Math.random() * width,
+    y: Math.random() * height,
+    radius,
+    speed: Math.random() * 0.5 + 0.2,
+    color,
+    alpha
+  };
+});
+
+    // Persistent starfield
+    
+
+    let supernovae = [];
+function drawScene() {
+      let intensity = morphAmount * 4;
+let skyR = 30 + Math.min(180, intensity);
+let skyG = 20 + Math.min(120, intensity * 0.8);
+let skyB = 15 + Math.min(80, intensity * 0.5);
+ctx.fillStyle = `rgb(${skyR.toFixed(0)}, ${skyG.toFixed(0)}, ${skyB.toFixed(0)})`;
+ctx.fillRect(0, 0, width, height);
+
+
+
+      
+      
+            
+      if (pulseAmount > 0) pulseAmount *= 0.95;
+
+      if(freqData){
+        // Supernova trigger
+        if (analyser && Math.random() < 0.03) {
+          analyser.getByteFrequencyData(freqData);
+          const avg = freqData.reduce((a, b) => a + b, 0) / freqData.length;
+          if (avg > 185) {
+            supernovae.push({
+              x: Math.random() * width,
+              y: Math.random() * height * 0.5,
+              radius: 100 + Math.random() * 200,
+              life: 60,
+              maxLife: 60
+            });
+          }
+        }
+        analyser.getByteFrequencyData(freqData);
+const avg = freqData.reduce((a,b)=>a+b,0)/freqData.length;
+morphAmount = (avg - 128) * 1.1;
+
+        // Stereo energy split
+        const leftEnergy = freqData.slice(0, freqData.length/2).reduce((a,b)=>a+b,0);
+        const rightEnergy = freqData.slice(freqData.length/2).reduce((a,b)=>a+b,0);
+        stereoDiff = (rightEnergy - leftEnergy) / freqData.length;
+
+        if (avg > 160) pulseAmount = 1;
+      }
+
+      const centerX = width / 2;
+      const centerY = height * 0.2;
+
+      
+      for(const star of stars){
+  if (star.prevX !== null && star.prevY !== null) {
+    const grad = ctx.createLinearGradient(star.x, star.y, star.prevX, star.prevY);
+    grad.addColorStop(0, star.color);
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.beginPath();
+    ctx.moveTo(star.x, star.y);
+    ctx.lineTo(star.prevX, star.prevY);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = star.radius * 0.4;
+    ctx.globalAlpha = star.alpha * 0.15;
+    ctx.stroke();
+  }
+
+  // Star
+  ctx.beginPath();
+  ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+  ctx.fillStyle = star.color;
+  ctx.globalAlpha = star.alpha * 0.7;
+  ctx.shadowColor = star.color;
+  ctx.shadowBlur = 5 + morphAmount * 0.5;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+
+  // Save previous position
+  star.prevX = star.x;
+  star.prevY = star.y;
+
+  const angle = Math.atan2(star.y - centerY * 0.95, star.x - centerX);
+star.x += Math.cos(angle) * star.speed * (1.8 + morphAmount * 0.01);
+star.y += Math.sin(angle) * star.speed * (1.8 + morphAmount * 0.01);
+
+  if (star.x < 0 || star.x > width || star.y < 0 || star.y > height) {
+    star.x = centerX + (Math.random() - 0.5) * 20;
+    star.y = centerY + (Math.random() - 0.5) * 20;
+    star.prevX = star.x;
+    star.prevY = star.y;
+  }
+  if (star.x < 0 || star.x > width || star.y < 0 || star.y > height) {
+    star.x = centerX + (Math.random() - 0.5) * 20;
+    star.y = centerY + (Math.random() - 0.5) * 20;
+  }
+}
+
+
+
+// Draw original orbit path
+ctx.save();
+ctx.translate(centerX, height * 0.1);
+ctx.rotate(performance.now() * (0.00005 + 0.0000002 * Math.min(morphAmount, 30)));
+ctx.beginPath();
+ctx.arc(0, 0, width * 0.4, 0, Math.PI * 2);
+ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+ctx.lineWidth = 1;
+ctx.setLineDash([12, 8]);
+ctx.stroke();
+ctx.setLineDash([]);
+ctx.restore();
+
+// Draw second orbit path (bluer, tilted, faster)
+ctx.save();
+ctx.translate(centerX, height * 0.2);
+ctx.rotate(performance.now() * 0.0003);
+ctx.scale(1, 0.6); // squish ellipse
+ctx.beginPath();
+ctx.arc(0, 0, width * 0.35, 0, Math.PI * 2);
+ctx.strokeStyle = 'rgba(150,180,255,0.4)';
+ctx.lineWidth = 1.5;
+ctx.setLineDash([10, 6]);
+ctx.stroke();
+ctx.setLineDash([]);
+ctx.restore();
+      const paletteWave = ['#244c3a','#3b4456','#573b62','#7a4b5c','#93515e','#d4a76d'];
+      for(let i=0; i<6; i++){
+        ctx.beginPath();
+        const amp = 35 + morphAmount * 0.693 + i * 2;
+        for(let x=0; x<=width; x+=10){
+          const norm = (x - centerX) / width;
+          const dip = -Math.pow(Math.cos(norm * Math.PI * 0.5), 2) * 7.5;
+          const y = height * (0.2 + 0.1 * i) + Math.sin((x + i * 15) * 0.01 + (performance.now() + i * 200) * 0.002 * (0.65 + i * 0.05)) * amp - dip * 40;
+          x===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+        }
+        ctx.lineTo(width, height); ctx.lineTo(0, height); ctx.closePath();
+        ctx.fillStyle = paletteWave[i];
+        ctx.fill();
+      }
+
+      const horizonY = height * 0.35;
+      const isLoud = morphAmount > 40;
+      const pathTop = centerY;
+      const segments = 100;
+      const bottomY = height;
+      const bottomWidth = width * 0.2;
+      const waveFreq = 0.05;
+      const sideAmp = 15 + morphAmount * 0.3;
+      const phase = performance.now() * 0.003;
+
+      ctx.save(); ctx.beginPath();
+      let xLeft = [], yVals = [], xRight = [];
+      let joinIndex = segments; // Default to top
+      for(let i=0; i<=segments; i++){
+        const t = i/segments;
+        const y = Math.round(bottomY - t * (bottomY - pathTop));
+        const w = bottomWidth * (1 - t);
+        const xL = centerX - w/2 + Math.sin(y * waveFreq + phase) * sideAmp - stereoDiff * 0.1;
+        const xR = centerX + w/2 + Math.sin(y * waveFreq + phase + Math.PI) * sideAmp + stereoDiff * 0.1;
+        xLeft.push(xL);
+        xRight.push(xR);
+        yVals.push(y);
+        if (xL >= xR && joinIndex === segments) joinIndex = i;
+      }
+      for (let i = 0; i <= joinIndex; i++) {
+        if(i === 0) ctx.moveTo(xLeft[i], yVals[i]);
+        else ctx.lineTo(xLeft[i], yVals[i]);
+      }
+      for (let i = joinIndex; i >= 0; i--) {
+        ctx.lineTo(xRight[i], yVals[i]);
+      }
+      ctx.closePath();
+      ctx.fillStyle = '#111';
+      ctx.globalAlpha = 0.96;
+      ctx.fill();
+ctx.restore();
+
+// Sunlight glow clipped to the road
+ctx.save();
+ctx.beginPath();
+for (let i = 0; i <= joinIndex; i++) {
+  ctx.lineTo(xLeft[i], yVals[i]);
+}
+for (let i = joinIndex; i >= 0; i--) {
+  ctx.lineTo(xRight[i], yVals[i]);
+}
+ctx.closePath();
+ctx.clip();
+
+const glowGradient = ctx.createLinearGradient(centerX, pathTop, centerX, pathTop + (height - pathTop) * 0.6);
+glowGradient.addColorStop(0, 'rgba(255, 150, 200, 0.28)');
+glowGradient.addColorStop(1, 'rgba(255, 150, 200, 0)');
+ctx.fillStyle = glowGradient;
+ctx.globalCompositeOperation = 'lighter';
+ctx.fillRect(0, pathTop, width, (height - pathTop) * 0.6);
+ctx.globalCompositeOperation = 'source-over';
+ctx.restore();
+
+      // Center dashed line for road
+      ctx.save();
+      const dashPhase = performance.now() * (0.03 + 0.00002 * Math.min(morphAmount, 30));
+      for (let i = 0; i < joinIndex; i++) {
+        const t = i / segments;
+        const y = bottomY - t * (bottomY - pathTop) * 0.85;
+        const w = bottomWidth * (1 - t);
+        const xL = centerX - w / 2 + Math.sin(y * waveFreq + phase) * sideAmp - stereoDiff * 0.1;
+        const xR = centerX + w / 2 + Math.sin(y * waveFreq + phase + Math.PI) * sideAmp + stereoDiff * 0.1;
+        const xMid = (xL + xR) / 2;
+        const dashOffset = (dashPhase + i * 5) % 60;
+        if (dashOffset > 30) continue;
+        ctx.beginPath();
+        ctx.lineWidth = 8 * (1 - t) + 0.5;
+        ctx.strokeStyle = `rgba(220,220,220,${0.9 * (1 - t)})`;
+        ctx.moveTo(xMid, y);
+        ctx.lineTo(xMid, y - 3 * (bottomY - pathTop) / segments);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      const sunR = (156 + morphAmount * 0.5);
+      const fillRadius = sunR * 1.1;
+      const glowRadius = sunR * (1.7 + 0.00567 * morphAmount);
+      const moonA = performance.now()*0.0002, moonOrb = width*0.4;
+      const moonX = centerX + Math.sin(moonA) * moonOrb,
+      moonY = height * 0.1 + Math.sin(moonA * 2 + 0.5) * 10;
+      const moonSz = (20 + 5 * Math.sin(performance.now() * 0.0001 + morphAmount * 0.0525)) * 0.873;
+
+            ctx.save();
+      const craterCount = 10;
+      ctx.beginPath();
+      ctx.arc(moonX, moonY, moonSz + 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(120, 200, 180, 0.12)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(moonX, moonY, moonSz, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(120, 200, 180, ${0.6 + 0.4 * (Math.sin(performance.now() * 0.0003 + morphAmount * 0.01) + 1) / 2})`;
+      ctx.shadowColor = '#60c4aa';
+      ctx.shadowBlur = 40 + morphAmount * 0.63;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+
+      // Add craters and whispy surface lines
+      ctx.save();
+      ctx.translate(moonX, moonY);
+ctx.restore();
+
+      // === Second larger moon ===
+      const moonX2 = centerX - Math.sin(moonA * 2.5) * moonOrb * 0.8;
+      const moonY2 = height * 0.18 + Math.cos(moonA * 3.2 + 1.5) * 80;
+      const moonSz2 = moonSz * 1.4;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(moonX2, moonY2, moonSz2 + 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(180, 210, 255, 0.15)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(moonX2, moonY2, moonSz2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(180, 210, 255, ${0.7 + 0.3 * (Math.sin(performance.now() * 0.0003 + morphAmount * 0.01) + 1) / 2})`;
+      ctx.shadowColor = '#D8A0A0';
+      ctx.shadowBlur = 80 + morphAmount * 0.9;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+
+      // Sun cone of light (striped rays)
+ctx.save();
+const coneBaseWidth = 0.55 + 0.001 * morphAmount;
+const coneHeight = height * (1 + 0.0005 * morphAmount);
+const stripeCount = 7;
+
+for (let i = 0; i < stripeCount; i++) {
+  const rel = i / (stripeCount - 1) - 0.5;
+  const stripeOffset = width * coneBaseWidth * rel;
+  ctx.beginPath();
+  ctx.moveTo(centerX, centerY);
+  ctx.lineTo(centerX + stripeOffset - width * 0.02, coneHeight);
+  ctx.lineTo(centerX + stripeOffset + width * 0.02, coneHeight);
+  ctx.closePath();
+
+  const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, coneHeight, coneHeight);
+  const baseAlpha = Math.min(1, 0.45 + 0.03 * morphAmount);
+  gradient.addColorStop(0, `rgba(255, 235, 180, ${baseAlpha})`);
+  gradient.addColorStop(1, 'rgba(255, 235, 180, 0)');
+  ctx.fillStyle = gradient;
+  ctx.fill();
+}
+ctx.restore();
+
+const sunG = ctx.createRadialGradient(centerX, centerY, fillRadius * 0.3, centerX, centerY, glowRadius);
+      sunG.addColorStop(0, '#D264A0');
+      sunG.addColorStop(0.5, 'rgba(255, 226, 138, ' + (0.05 + 0.001 * morphAmount).toFixed(3) + ')');
+      sunG.addColorStop(1, 'rgba(210, 100, 160, 0)');
+      ctx.beginPath(); ctx.arc(centerX, centerY, fillRadius, 0, Math.PI*2); ctx.fillStyle=sunG; ctx.fill();
+
+// Sun rays drawn after glow
+
+
+      const drift = performance.now() * 0.00005;
+for (let i = 0; i < 8; i++) {
+  const ang = 2 * Math.PI * i / 8 + drift;
+  const baseLen = sunR + 80;
+  const pulseBoost = morphAmount * 0.3 + 5 * Math.sin(performance.now() * 0.006);
+  const len = baseLen + pulseBoost;
+
+  const x1 = centerX + Math.cos(ang) * sunR * 0.3;
+  const y1 = centerY + Math.sin(ang) * sunR * 0.3;
+  const x2 = centerX + Math.cos(ang) * len;
+  const y2 = centerY + Math.sin(ang) * len;
+
+  const alpha = 0.55 + Math.min(0.2, morphAmount * 0.004 + 0.1 * Math.sin(performance.now() * 0.01));
+  const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+  grad.addColorStop(0, `rgba(210, 100, 160, ${alpha.toFixed(3)})`);
+  grad.addColorStop(1, 'rgba(210, 100, 160, 0)');
+
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 4;
+  ctx.stroke();
+      }
+
+      
+
+      // Colour grading film haze overlay
+ctx.save();
+ctx.globalAlpha = 1.2 + 0.00012 * Math.min(morphAmount, 30);
+ctx.globalCompositeOperation = 'soft-light';
+const hazeShift = Math.sin(performance.now() * 0.0003 + morphAmount * 0.003) * width * 0.4;
+const grading = ctx.createLinearGradient(hazeShift, 0, width + hazeShift, height);
+grading.addColorStop(0, 'rgba(255, 220, 180, 0.6)');
+grading.addColorStop(0.5, 'rgba(130, 110, 100, 0.45)');
+grading.addColorStop(1, 'rgba(25, 20, 15, 0.5)');
+ctx.fillStyle = grading;
+ctx.fillRect(0, 0, width, height);
+ctx.globalCompositeOperation = 'source-over';
+ctx.restore();
+
+// Simplified grain overlay
+      grainOffset += 0.3;
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      ctx.drawImage(grainCanvas, grainOffset % width - width, 0);
+      ctx.drawImage(grainCanvas, grainOffset % width, 0);
+      ctx.restore();
+
+      
+
+      
+      // Supernova bursts
+      for (let i = supernovae.length - 1; i >= 0; i--) {
+        const sn = supernovae[i];
+        const p = sn.life / sn.maxLife;
+        const alpha = 0.15 * p;
+        const radius = sn.radius * (1 - p * 0.5);
+        const grad = ctx.createRadialGradient(sn.x, sn.y, 0, sn.x, sn.y, radius);
+        grad.addColorStop(0, `rgba(255, 180, 150, ${alpha})`);
+        grad.addColorStop(1, 'rgba(255, 100, 150, 0)');
+        ctx.beginPath();
+        ctx.arc(sn.x, sn.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        sn.life--;
+        if (sn.life <= 0) supernovae.splice(i, 1);
+      }
+
+      // Sun haze distortion
+      for (let i = 0; i < 10; i++) {
+        const r = fillRadius + i * 2;
+        const alpha = 0.02;
+        const dx = Math.sin(performance.now() * 0.001 + i) * 1.5;
+        const dy = Math.cos(performance.now() * 0.001 + i) * 1.5;
+        ctx.beginPath();
+        ctx.arc(centerX + dx, centerY + dy, r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 220, 150, ${alpha})`;
+        ctx.fill();
+      }
+
+      // Shooting star trigger (rare on loudest peaks)
+      if (shootingCooldown <= 0) {
+          shootingStar = {
+            x: Math.random() < 0.5 ? -100 : width + 100,
+            y: Math.random() * height * 0.23,
+            vx: (Math.random() < 0.5 ? 1 : -1) * (6 + Math.random() * 6),
+            vy: (Math.random() - 0.5) * 3,
+            radius: 2 + Math.random() * 3,
+            alpha: 0.4 + Math.random() * 0.2,
+            color: ['#cc6f99', '#6fbba0', '#6f90bb'][Math.floor(Math.random() * 3)],
+            trailLength: 8 + Math.floor(Math.random() * 8),
+            life: 200
+          };
+          shootingCooldown = 240; // ~4 seconds
+      }
+      if (shootingCooldown > 0) shootingCooldown--;
+
+      if (shootingStar) {
+        // Draw gradient tapered trail
+        const trailGradient = ctx.createLinearGradient(shootingStar.x, shootingStar.y, shootingStar.x - shootingStar.vx * shootingStar.trailLength, shootingStar.y - shootingStar.vy * shootingStar.trailLength);
+        trailGradient.addColorStop(0, shootingStar.color);
+        trailGradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+        ctx.beginPath();
+        for (let t = 0; t < shootingStar.trailLength; t++) {
+          const tx = shootingStar.x - shootingStar.vx * t;
+          const ty = shootingStar.y - shootingStar.vy * t;
+          if (t === 0) ctx.moveTo(tx, ty);
+          else ctx.lineTo(tx, ty);
+        }
+        ctx.strokeStyle = trailGradient;
+        ctx.lineWidth = Math.max(1, shootingStar.radius * 0.6);
+        ctx.shadowColor = shootingStar.color;
+        ctx.shadowBlur = 3 + shootingStar.radius * 0.5;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Star head
+        ctx.beginPath();
+        ctx.arc(shootingStar.x, shootingStar.y, shootingStar.radius, 0, Math.PI * 2);
+        ctx.fillStyle = shootingStar.color;
+        ctx.shadowColor = shootingStar.color;
+        ctx.shadowBlur = 6;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.shadowBlur = 0;
+
+        shootingStar.x += shootingStar.vx;
+        shootingStar.y += shootingStar.vy;
+        shootingStar.life--;
+        if (shootingStar.life <= 0 ||
+            shootingStar.x < -100 || shootingStar.x > width + 100 ||
+            shootingStar.y < -100 || shootingStar.y > height * 0.23) {
+          shootingStar = null;
+        }
+      }
+
+        
+    }
+
+    function animate(){ drawScene();
+
+requestAnimationFrame(animate); }
+    animate();
+
+    const audio = document.getElementById('audio');
+audio.src = 'https://archive.org/download/thotfye-mix-01.05.25/Thotfye%20MIX%2001.05.25.mp3';
+
+document.getElementById('overlay').addEventListener('click', () => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaElementSource(audio);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.0;
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+    src.connect(analyser);
+    analyser.connect(audioCtx.destination);
+  }
+
+  audioCtx.resume().then(() => audio.play().catch(e => console.error(e)));
+  document.getElementById('overlay').style.display = 'none';
+});
+
+
+  </script>
+</body>
+</html>
