@@ -563,7 +563,7 @@ document.getElementById('overlay').addEventListener('click', () => {
     const src = audioCtx.createMediaElementSource(audio);
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.0;
+    analyser.smoothingTimeConstant = 0.5;
     freqData = new Uint8Array(analyser.frequencyBinCount);
     src.connect(analyser);
     analyser.connect(audioCtx.destination);
@@ -620,3 +620,4 @@ document.getElementById('overlay').addEventListener('click', () => {
 
 </body>
 </html>
+
