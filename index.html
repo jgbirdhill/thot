@@ -562,8 +562,8 @@ document.getElementById('overlay').addEventListener('click', () => {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const src = audioCtx.createMediaElementSource(audio);
     analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 1048;
-    analyser.smoothingTimeConstant = 0.45;
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.40;
     freqData = new Uint8Array(analyser.frequencyBinCount);
     src.connect(analyser);
     analyser.connect(audioCtx.destination);
@@ -592,7 +592,7 @@ document.getElementById('overlay').addEventListener('click', () => {
 
   startBtn.onclick = () => {
     chunks = [];
-    // If you have WebAudio you want in the video, also add its track(s) to this stream.
+   
     const stream = CANVAS.captureStream(FPS); 
     rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10_000_000 });
 
@@ -620,6 +620,7 @@ document.getElementById('overlay').addEventListener('click', () => {
 
 </body>
 </html>
+
 
 
 
