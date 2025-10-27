@@ -555,7 +555,7 @@ requestAnimationFrame(animate); }
     animate();
 
     const audio = document.getElementById('audio');
-audio.src = 'https://ia600701.us.archive.org/13/items/ketch-mastered/ketch%20mastered.mp3';
+audio.src = 'https://ia801406.us.archive.org/30/items/jooloosooboo-thot-master-1-24-48-13-10-25/Jooloosooboo%20-%20Thot%20-%20Master%201%2024_48%20%2813_10_25%29.wav';
 
 document.getElementById('overlay').addEventListener('click', () => {
   if (!audioCtx) {
@@ -575,5 +575,49 @@ document.getElementById('overlay').addEventListener('click', () => {
 
 
   </script>
+  <button id="recStart" style="position:fixed;bottom:16px;left:16px;z-index:9999">Start Rec</button>
+<button id="recStop"  style="position:fixed;bottom:16px;left:110px;z-index:9999" disabled>Stop Rec</button>
+<script>
+(() => {
+  const CANVAS = document.getElementById('viz') || document.querySelector('canvas');
+  if (!CANVAS) { console.error('No <canvas> found.'); return; }
+
+  const FPS = 60;                         // lower to 30 if your machine struggles
+  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9' : 'video/webm;codecs=vp8';
+
+  let rec = null, chunks = [];
+  const startBtn = document.getElementById('recStart');
+  const stopBtn  = document.getElementById('recStop');
+
+  startBtn.onclick = () => {
+    chunks = [];
+    // If you have WebAudio you want in the video, also add its track(s) to this stream.
+    const stream = CANVAS.captureStream(FPS); 
+    rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10_000_000 });
+
+    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    rec.onstop = () => {
+      const blob = new Blob(chunks, { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement('a'), { href: url, download: 'visualiser.webm' });
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    };
+
+    rec.start();                 // recording begins
+    startBtn.disabled = true; 
+    stopBtn.disabled  = false;
+  };
+
+  stopBtn.onclick = () => {
+    if (rec && rec.state !== 'inactive') rec.stop();
+    startBtn.disabled = false; 
+    stopBtn.disabled  = true;
+  };
+})();
+</script>
+
 </body>
 </html>
+
