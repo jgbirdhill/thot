@@ -130,11 +130,26 @@ ctx.fillRect(0, 0, width, height);
             
       if (pulseAmount > 0) pulseAmount *= 0.95;
 
-      if(freqData){
-        // Supernova trigger
+      if (freqData) {
+        // Read analyser ONCE per frame
+        analyser.getByteFrequencyData(freqData);
+
+        // Single-pass sums (no slice/reduce allocations)
+        let sum = 0, leftSum = 0, rightSum = 0;
+        const mid = freqData.length >>> 1;
+        for (let i = 0; i < freqData.length; i++) {
+          const v = freqData[i];
+          sum += v;
+          if (i < mid) leftSum += v; else rightSum += v;
+        }
+        const avg = sum / freqData.length;
+
+        // Drive visuals from the same avg
+        morphAmount = (avg - 128) * 1.1;
+        stereoDiff = (rightSum - leftSum) / freqData.length;
+
+        // Supernova trigger uses the already-computed avg (no extra analyser read)
         if (analyser && Math.random() < 0.03) {
-          analyser.getByteFrequencyData(freqData);
-          const avg = freqData.reduce((a, b) => a + b, 0) / freqData.length;
           if (avg > 185) {
             supernovae.push({
               x: Math.random() * width,
@@ -145,14 +160,6 @@ ctx.fillRect(0, 0, width, height);
             });
           }
         }
-        analyser.getByteFrequencyData(freqData);
-const avg = freqData.reduce((a,b)=>a+b,0)/freqData.length;
-morphAmount = (avg - 128) * 1.1;
-
-        // Stereo energy split
-        const leftEnergy = freqData.slice(0, freqData.length/2).reduce((a,b)=>a+b,0);
-        const rightEnergy = freqData.slice(freqData.length/2).reduce((a,b)=>a+b,0);
-        stereoDiff = (rightEnergy - leftEnergy) / freqData.length;
 
         if (avg > 160) pulseAmount = 1;
       }
@@ -620,4 +627,3 @@ document.getElementById('overlay').addEventListener('click', () => {
 
 </body>
 </html>
-
